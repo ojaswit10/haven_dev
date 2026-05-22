@@ -1,0 +1,227 @@
+// Haven — Prisma Schema
+// Database: PostgreSQL (Neon)
+// Auth: NextAuth with Google OAuth
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── AUTH (NextAuth required tables) ─────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── USER ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  // Relations
+  accounts     Account[]
+  sessions     Session[]
+  assessments  Assessment[]
+  chatSessions ChatSession[]
+  journals     JournalEntry[]
+  tasks        DailyTask[]
+  progress     Progress[]
+}
+
+// ─── ASSESSMENT ───────────────────────────────────────────────────────────────
+
+model Assessment {
+  id     String @id @default(cuid())
+  userId String?
+
+  // Category
+  category String // heartbreak | grief | loneliness | anxiety | feeling_lost
+
+  // Basic context questions
+  gender    String // male | female | non_binary | prefer_not_to_say
+  initiator String // i_did | they_did | mutual | faded_away
+  feelings  String[] // array of selected feelings
+
+  // All 15 question answers stored as JSON
+  answers Json // { q1: "answer", q2: "answer", ... }
+
+  // Computed scoring results
+  attachmentStyle      String // anxious | avoidant | secure | disorganized
+  anxiousScore         Int
+  avoidantScore        Int
+  secureScore          Int
+  disorganizedScore    Int
+  emotionalDepthScore  Int    // 0-9
+  blameIndex           String // low | high
+
+  // Open story
+  story String @db.Text
+
+  // Status — active or archived (for journey resets)
+  status String @default("active") // active | archived
+
+  // Email sent flag
+  emailSent Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user         User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatSessions ChatSession[]
+  progress     Progress?
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+// ─── CHAT ─────────────────────────────────────────────────────────────────────
+
+model ChatSession {
+  id           String @id @default(cuid())
+  userId       String
+  assessmentId String
+
+  messageCount Int     @default(0)
+  isLimited    Boolean @default(false) // true when free limit hit
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@index([userId])
+  @@index([assessmentId])
+}
+
+model ChatMessage {
+  id            String @id @default(cuid())
+  chatSessionId String
+
+  role    String // user | assistant
+  content String @db.Text
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+}
+
+// ─── JOURNAL ──────────────────────────────────────────────────────────────────
+
+model JournalEntry {
+  id     String @id @default(cuid())
+  userId String
+
+  content      String  @db.Text
+  mood         String  // better | same | harder
+  aiReflection String? @db.Text // AI generated reflection after entry
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── DAILY TASKS ──────────────────────────────────────────────────────────────
+
+model DailyTask {
+  id     String @id @default(cuid())
+  userId String
+
+  task            String  // task description
+  attachmentStyle String  // which style this task is for
+  dayNumber       Int     // which day in the journey (1, 2, 3...)
+  completed       Boolean @default(false)
+  date            DateTime @default(now()) // which day this was assigned
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, date])
+}
+
+// ─── PROGRESS ─────────────────────────────────────────────────────────────────
+
+model Progress {
+  id           String @id @default(cuid())
+  userId       String
+  assessmentId String @unique
+
+  dayStreak      Int      @default(0)
+  journalStreak  Int      @default(0)
+  tasksCompleted Int      @default(0)
+  currentDay     Int      @default(1) // how many days since they started
+
+  // Emotional trend — array of mood entries over time
+  // stored as JSON: [{ date: "2024-01-01", mood: "better" }, ...]
+  emotionalTrend Json @default("[]")
+
+  // Graduation
+  graduated    Boolean   @default(false)
+  graduatedAt  DateTime?
+
+  // Status — active or archived
+  status String @default("active") // active | archived
+
+  startedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, status])
+}
