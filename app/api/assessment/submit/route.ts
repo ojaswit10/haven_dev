@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
         story: story ?? "",
         status: "active",
         emailSent: false,
+        recoveryReadiness: scores.recoveryReadiness,
       },
     });
 

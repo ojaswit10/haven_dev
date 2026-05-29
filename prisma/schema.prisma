@@ -104,6 +104,8 @@ model Assessment {
   // Email sent flag
   emailSent Boolean @default(false)
 
+  recoveryReadiness String? // early | processing | ready
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -122,7 +124,7 @@ model ChatSession {
   id           String @id @default(cuid())
   userId       String
   assessmentId String
-
+  
   messageCount Int     @default(0)
   isLimited    Boolean @default(false) // true when free limit hit
 
@@ -156,18 +158,14 @@ model ChatMessage {
 // ─── JOURNAL ──────────────────────────────────────────────────────────────────
 
 model JournalEntry {
-  id     String @id @default(cuid())
-  userId String
-
+  id           String  @id @default(cuid())
+  userId       String
   content      String  @db.Text
-  mood         String  // better | same | harder
-  aiReflection String? @db.Text // AI generated reflection after entry
-
-  createdAt DateTime @default(now())
-
-  // Relations
+  mood         String
+  title        String? // add this
+  aiReflection String? @db.Text
+  createdAt    DateTime @default(now())
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId])
 }
 

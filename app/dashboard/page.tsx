@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import type { Quote, Task } from "@/lib/content";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,71 +28,21 @@ interface Progress {
 
 type Mood = "Better" | "Same" | "Harder" | "Not sure";
 
-// ─── Static content ───────────────────────────────────────────────────────────
+// ─── Color tokens ─────────────────────────────────────────────────────────────
 
-const STYLE_LABELS: Record<string, string> = {
-  anxious: "Anxious Attachment",
-  avoidant: "Avoidant Attachment",
-  secure: "Secure Attachment",
-  disorganized: "Disorganized Attachment",
-};
-
-const DAILY_REMINDERS: Record<string, string[]> = {
-  anxious: [
-    "Today, notice when you reach for your phone to check on them — and pause for one breath before you do.",
-    "If you feel the urge to send a message, write it in your journal instead. You don't have to send everything you feel.",
-    "Reassurance you give yourself lasts longer than reassurance you ask for. Try once today.",
-    "You are not too much. You just loved someone who couldn't hold it.",
-  ],
-  avoidant: [
-    "Today, let yourself feel one thing fully — without immediately moving on from it.",
-    "Tell one person how you actually are. Not 'fine.' The real answer.",
-    "Busyness is not the same as healing. Notice when you're using one for the other.",
-    "You're allowed to need people. It won't make you weak.",
-  ],
-  secure: [
-    "Your ability to process this is a strength. Let the grief move at its own pace today.",
-    "Notice what this relationship taught you about what you need. That knowledge is yours to keep.",
-    "Reach out to someone you trust today. You don't have to carry this alone.",
-    "You will love again — and you'll do it with everything you learned here.",
-  ],
-  disorganized: [
-    "Contradictory feelings are allowed to coexist. You don't have to resolve them today.",
-    "Before any big decision today, pause and ask: am I acting from fear or from clarity?",
-    "Write what you feel — even if it doesn't make sense. Especially if it doesn't make sense.",
-    "Your nervous system is trying to keep you safe. Thank it — then gently redirect it.",
-  ],
-};
-
-const DAILY_TASKS: Record<string, string[]> = {
-  anxious: [
-    "Don't check their profile today. Just today.",
-    "Write down one thing you like about yourself — unrelated to any relationship.",
-    "Reach out to a friend you haven't spoken to this week.",
-    "Go one hour without checking your phone. Notice how it feels.",
-    "Write a letter to your past self. You don't have to send it.",
-  ],
-  avoidant: [
-    "Tell one person something real about how you're feeling.",
-    "Sit with a feeling for five minutes without distracting yourself.",
-    "Text someone you care about first — don't wait for them to reach out.",
-    "Write about what you actually want from a relationship. Be honest.",
-    "Do something kind for yourself that isn't productivity.",
-  ],
-  secure: [
-    "Journal about one thing this relationship taught you.",
-    "Call or text someone who makes you feel safe.",
-    "Do one thing today that is entirely for you.",
-    "Write about what you're looking forward to — however small.",
-    "Acknowledge one way you've grown through this.",
-  ],
-  disorganized: [
-    "Ground yourself: name 5 things you can see right now.",
-    "Write whatever comes — no structure, no editing.",
-    "Reach out to one person who feels consistent and safe.",
-    "Take a slow walk without your phone.",
-    "Write about a moment you felt truly at peace. What made it that way?",
-  ],
+const C = {
+  bg: "#F0EDE6",
+  card: "#FDF8F2",
+  accent: "#F8F1E5",
+  blue: "#A8C5DA",
+  blueDark: "#7BA7C2",
+  sand: "#C4A882",
+  text: "#2D3748",
+  muted: "rgba(45,55,72,0.5)",
+  faint: "rgba(45,55,72,0.1)",
+  hint: "rgba(45,55,72,0.3)",
+  peach: "#E8B4A0",
+  border: "rgba(45,55,72,0.07)",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -103,16 +54,6 @@ function getGreeting() {
   return "Good evening";
 }
 
-function getDayTask(style: string, day: number) {
-  const tasks = DAILY_TASKS[style] ?? DAILY_TASKS.anxious;
-  return tasks[(day - 1) % tasks.length];
-}
-
-function getDayReminder(style: string, day: number) {
-  const reminders = DAILY_REMINDERS[style] ?? DAILY_REMINDERS.anxious;
-  return reminders[(day - 1) % reminders.length];
-}
-
 function moodToValue(mood: string) {
   if (mood === "Better") return 1;
   if (mood === "Same") return 0;
@@ -120,259 +61,89 @@ function moodToValue(mood: string) {
   return 0;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Pie chart ────────────────────────────────────────────────────────────────
 
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs tracking-[0.18em] uppercase text-haven-sand font-semibold mb-4">
-      {children}
-    </p>
-  );
-}
-
-function Card({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
-  return (
-    <section
-      className="rounded-3xl p-7 transition-all duration-300"
-      style={{ backgroundColor: accent ? "#F8F1E5" : "#FDF8F2" }}
-    >
-      {children}
-    </section>
-  );
-}
-
-function CheckInCard({
-  onSelect,
-  initial,
-}: {
-  onSelect: (mood: Mood) => void;
-  initial?: Mood;
-}) {
-  const [selected, setSelected] = useState<Mood | null>(initial ?? null);
-  const options: Mood[] = ["Better", "Same", "Harder", "Not sure"];
-
-  const handleSelect = (opt: Mood) => {
-    setSelected(opt);
-    onSelect(opt);
-  };
-
-  return (
-    <Card>
-      <Label>How are you feeling right now?</Label>
-      <div className="flex flex-wrap gap-2.5">
-        {options.map((opt) => (
-          <button
-            key={opt}
-            onClick={() => handleSelect(opt)}
-            className={`px-5 py-2.5 rounded-full text-sm border transition-all duration-300 ${
-              selected === opt
-                ? "bg-haven-blue text-white border-haven-blue"
-                : "bg-transparent text-haven-text border-haven-text/15 hover:border-haven-blue-deep"
-            }`}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-      {selected && (
-        <p className="mt-4 text-xs text-haven-text/40">
-          Saved. Come back tomorrow to check in again.
-        </p>
-      )}
-    </Card>
-  );
-}
-
-function TaskCard({ task }: { task: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Card>
-      <Label>Today&apos;s task</Label>
-      <div className={`flex items-start justify-between gap-5 transition-opacity duration-300 ${done ? "opacity-60" : ""}`}>
-        <p className="font-heading text-xl text-haven-text leading-relaxed flex-1">
-          {task}
-        </p>
-        <button
-          onClick={() => setDone(!done)}
-          className={`flex-shrink-0 mt-1 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-            done ? "bg-haven-blue border-haven-blue" : "border-haven-text/20 hover:border-haven-blue-deep"
-          }`}
-          aria-label="Mark task done"
-        >
-          {done && (
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 7.5L5.5 11L12 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
-        </button>
-      </div>
-      {done && <p className="mt-4 text-sm text-haven-text/50">✓ Done for today</p>}
-    </Card>
-  );
-}
-
-function TrendCard({
-  trend,
-  journalStreak,
-  tasksCompleted,
-}: {
-  trend: { date: string; mood: string }[];
-  journalStreak: number;
-  tasksCompleted: number;
-}) {
-  const width = 480;
-  const height = 140;
-  const padX = 36;
-  const padY = 20;
-  const innerW = width - padX * 2;
-  const innerH = height - padY * 2;
-
-  // Use last 7 entries or pad with nulls
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function PieChart({ trend }: { trend: { date: string; mood: string }[] }) {
   const last7 = trend.slice(-7);
+  const better = last7.filter((d) => moodToValue(d.mood) === 1).length;
+  const same = last7.filter((d) => moodToValue(d.mood) === 0).length;
+  const harder = last7.filter((d) => moodToValue(d.mood) === -1).length;
+  const total = last7.length;
 
-  const points = last7.map((d, i) => {
-    const x = padX + (i * innerW) / Math.max(last7.length - 1, 1);
-    const y = padY + ((1 - moodToValue(d.mood)) / 2) * innerH;
-    const day = days[new Date(d.date).getDay() === 0 ? 6 : new Date(d.date).getDay() - 1];
-    return { x, y, day };
-  });
+  const r = 42;
+  const cx = 54;
+  const cy = 54;
+  const circ = 2 * Math.PI * r;
 
-  const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-
-  if (trend.length === 0) {
-    return (
-      <Card>
-        <Label>Your week</Label>
-        <p className="text-haven-text/40 text-sm font-body">
-          Check in each day — your emotional trend will appear here.
-        </p>
-        <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-haven-text/5">
-          <div className="text-haven-text font-heading">
-            Journal streak: <span className="text-haven-sand">{journalStreak} days</span>
-          </div>
-          <div className="text-haven-text font-heading">
-            Tasks completed: <span className="text-haven-sand">{tasksCompleted}</span>
-          </div>
-        </div>
-      </Card>
-    );
-  }
+  const betterDash = total > 0 ? (better / total) * circ : 0;
+  const sameDash = total > 0 ? (same / total) * circ : 0;
+  const harderDash = total > 0 ? (harder / total) * circ : 0;
 
   return (
-    <Card>
-      <Label>Your week</Label>
-      <div className="w-full overflow-hidden">
-        <svg viewBox={`0 0 ${width} ${height + 24}`} className="w-full h-auto">
-          <text x={padX - 4} y={padY + 4} fontSize="9" fill="#C4A882" textAnchor="end" fontFamily="Nunito">Better</text>
-          <text x={padX - 4} y={padY + innerH / 2 + 4} fontSize="9" fill="#C4A882" textAnchor="end" fontFamily="Nunito">Same</text>
-          <text x={padX - 4} y={padY + innerH + 4} fontSize="9" fill="#C4A882" textAnchor="end" fontFamily="Nunito">Harder</text>
-          {points.length > 1 && (
-            <path d={path} stroke="#A8C5DA" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          )}
-          {points.map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#A8C5DA" />
-          ))}
-          {points.map((p, i) => (
-            <text key={i} x={p.x} y={height + 14} fontSize="10" fill="#2D3748" opacity="0.4" textAnchor="middle" fontFamily="Nunito">
-              {p.day}
-            </text>
-          ))}
-        </svg>
+    <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <svg width="108" height="108" viewBox="0 0 108 108" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.faint} strokeWidth="20" />
+        {total === 0 ? (
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(45,55,72,0.08)" strokeWidth="20" />
+        ) : (
+          <>
+            {better > 0 && (
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.blue} strokeWidth="20"
+                strokeDasharray={`${betterDash} ${circ}`}
+                strokeDashoffset={0}
+                transform={`rotate(-90 ${cx} ${cy})`} />
+            )}
+            {same > 0 && (
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.sand} strokeWidth="20"
+                strokeDasharray={`${sameDash} ${circ}`}
+                strokeDashoffset={-betterDash}
+                transform={`rotate(-90 ${cx} ${cy})`} />
+            )}
+            {harder > 0 && (
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.peach} strokeWidth="20"
+                strokeDasharray={`${harderDash} ${circ}`}
+                strokeDashoffset={-(betterDash + sameDash)}
+                transform={`rotate(-90 ${cx} ${cy})`} />
+            )}
+          </>
+        )}
+        <circle cx={cx} cy={cy} r="22" fill={C.card} />
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="13" fill={C.text} fontFamily="Georgia,serif" fontWeight="500">
+          {total > 0 ? total : "\u2014"}
+        </text>
+        <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill={C.muted} fontFamily="Georgia,serif">
+          {total > 0 ? "days" : "no data"}
+        </text>
+      </svg>
+      <div>
+        {total === 0 ? (
+          <p style={{ fontSize: 12, color: C.hint, lineHeight: 1.6 }}>
+            Check in each day to see your mood trend here.
+          </p>
+        ) : (
+          [
+            { color: C.blue, label: "Better", count: better },
+            { color: C.sand, label: "Same", count: same },
+            { color: C.peach, label: "Harder", count: harder },
+          ].map((item) => (
+            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: item.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: C.muted }}>{item.label}</span>
+              <span style={{ fontSize: 13, color: C.text, fontWeight: 500, marginLeft: "auto" }}>{item.count}d</span>
+            </div>
+          ))
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-haven-text/5">
-        <div className="text-haven-text font-heading">
-          Journal streak: <span className="text-haven-sand">{journalStreak} days</span>
-        </div>
-        <div className="text-haven-text font-heading">
-          Tasks completed: <span className="text-haven-sand">{tasksCompleted}</span>
-        </div>
-      </div>
-    </Card>
+    </div>
   );
 }
 
-function ReminderCard({ reminder }: { reminder: string }) {
-  return (
-    <Card accent>
-      <p className="font-heading text-lg text-haven-text leading-relaxed italic">
-        {reminder}
-      </p>
-    </Card>
-  );
-}
-
-function JournalCard({ assessmentId }: { assessmentId: string }) {
-  const [entry, setEntry] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = async () => {
-    if (!entry.trim()) return;
-    setSaving(true);
-    try {
-      await fetch("/api/journal/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: entry, assessmentId }),
-      });
-      setSaved(true);
-      setEntry("");
-      setTimeout(() => setSaved(false), 3000);
-    } catch {
-      // silent fail for now
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Card>
-      <Label>Your journal</Label>
-      <textarea
-        value={entry}
-        onChange={(e) => setEntry(e.target.value)}
-        placeholder="What's on your mind today..."
-        rows={5}
-        className="w-full rounded-2xl border border-haven-text/10 p-4 text-haven-text placeholder:text-haven-text/35 focus:outline-none focus:border-haven-blue-deep resize-none transition-colors duration-300"
-        style={{ backgroundColor: "#F0EDE6" }}
-      />
-      <button
-        onClick={handleSave}
-        disabled={saving || !entry.trim()}
-        className="mt-4 px-7 py-3 rounded-full bg-haven-blue text-white text-sm hover:bg-haven-blue-deep transition-colors duration-300 disabled:opacity-50"
-      >
-        {saving ? "Saving..." : saved ? "Saved ✓" : "Save entry"}
-      </button>
-      <p className="mt-3 text-xs text-haven-text/45">
-        AI will reflect on this after you save.
-      </p>
-    </Card>
-  );
-}
-
-function TalkCard() {
-  return (
-    <Card>
-      <h2 className="font-heading text-2xl text-haven-text mb-2">Need to talk?</h2>
-      <p className="text-haven-text/60 leading-relaxed mb-5 text-sm">
-        Haven is here. No advice, no judgment. Just a space to think out loud.
-      </p>
-      <Link
-        href="/chat"
-        className="inline-block px-7 py-3 rounded-full bg-haven-blue text-white text-sm hover:bg-haven-blue-deep transition-colors duration-300"
-      >
-        Start a conversation
-      </Link>
-      <p className="mt-3 text-xs text-haven-text/45">10 messages remaining</p>
-    </Card>
-  );
-}
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function DashboardSkeleton() {
   return (
-    <div className="min-h-screen bg-haven-bg flex items-center justify-center">
-      <p className="font-heading italic text-haven-text/40 text-xl animate-pulse">
+    <div style={{ minHeight: "100vh", backgroundColor: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <p style={{ fontFamily: "Georgia,serif", fontStyle: "italic", fontSize: 20, color: C.hint }}>
         Getting your space ready...
       </p>
     </div>
@@ -388,6 +159,10 @@ export default function DashboardPage() {
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
+  const [completedTasks, setCompletedTasks] = useState<boolean[]>([false, false, false, false]);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -396,26 +171,45 @@ export default function DashboardPage() {
       return;
     }
     fetchDashboardData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
   async function fetchDashboardData() {
     try {
-      const res = await fetch("/api/assessment/latest");
-      if (res.ok) {
-        const data = await res.json();
+      const [aRes, pRes, cRes] = await Promise.all([
+        fetch("/api/assessment/latest"),
+        fetch("/api/progress/get"),
+        fetch("/api/content/daily"),
+      ]);
+
+      if (aRes.ok) {
+        const data = await aRes.json();
         if (data.assessment) {
           setAssessment(data.assessment);
         } else {
-          // No assessment — send them to take it
           router.push("/");
           return;
         }
       }
-      // Progress fetch — will build this route next
-      const pRes = await fetch("/api/progress/get");
+
       if (pRes.ok) {
         const pData = await pRes.json();
         setProgress(pData.progress);
+        const trend = pData.progress?.emotionalTrend ?? [];
+        const today = new Date().toISOString().split("T")[0];
+        const todayEntry = [...trend].reverse().find(
+          (t: { date: string; mood: string }) => t.date === today
+        );
+        if (todayEntry) setSelectedMood(todayEntry.mood as Mood);
+      }
+
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        if (cData.quote) setQuote(cData.quote);
+        if (cData.tasks) {
+          setTasks(cData.tasks);
+          setCompletedTasks(new Array(cData.tasks.length).fill(false));
+        }
       }
     } catch {
       // silent
@@ -425,6 +219,7 @@ export default function DashboardPage() {
   }
 
   const handleMoodSelect = async (mood: Mood) => {
+    setSelectedMood(mood);
     try {
       await fetch("/api/progress/checkin", {
         method: "POST",
@@ -436,54 +231,303 @@ export default function DashboardPage() {
     }
   };
 
+  const toggleTask = (i: number) => {
+    setCompletedTasks((prev) => {
+      const next = [...prev];
+      next[i] = !next[i];
+      return next;
+    });
+  };
+
   if (status === "loading" || loading) return <DashboardSkeleton />;
   if (!assessment) return null;
 
-  const style = assessment.attachmentStyle;
   const day = progress?.currentDay ?? 1;
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
-  const greeting = getGreeting();
-  const task = getDayTask(style, day);
-  const reminder = getDayReminder(style, day);
   const trend = progress?.emotionalTrend ?? [];
-  const todayMood = trend.length > 0
-    ? (trend[trend.length - 1].date.startsWith(new Date().toISOString().split("T")[0])
-      ? trend[trend.length - 1].mood as Mood
-      : undefined)
-    : undefined;
+  const moods: Mood[] = ["Better", "Same", "Harder", "Not sure"];
+  const completedCount = completedTasks.filter(Boolean).length;
 
   return (
-    <div className="min-h-screen bg-haven-bg">
-      <main className="max-w-[600px] mx-auto px-6 pt-16 pb-24">
+    <div style={{ minHeight: "100vh", backgroundColor: C.bg }}>
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px 60px" }}>
 
-        {/* Greeting */}
-        <header className="mb-16">
-          <h1 className="font-heading text-4xl md:text-5xl text-haven-text leading-tight">
-            {greeting}, {firstName}.
-          </h1>
-          <p className="mt-4 font-heading italic text-lg text-haven-text/55">
-            Day {day}. You&apos;re still here. That matters.
-          </p>
-        </header>
-
-        <div className="flex flex-col gap-8">
-          <CheckInCard onSelect={handleMoodSelect} initial={todayMood} />
-          <TaskCard task={task} />
-          <TrendCard
-            trend={trend}
-            journalStreak={progress?.journalStreak ?? 0}
-            tasksCompleted={progress?.tasksCompleted ?? 0}
-          />
-          <ReminderCard reminder={reminder} />
-          <JournalCard assessmentId={assessment.id} />
-          <TalkCard />
+        {/* ── Section 1: Quote bar ─────────────────────────────────────── */}
+        <div style={{
+          backgroundColor: C.card,
+          borderRadius: 18,
+          padding: "20px 28px",
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 24,
+        }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600, marginBottom: 8 }}>
+              Thought for today
+            </p>
+            <p style={{ fontFamily: "Georgia,serif", fontStyle: "italic", fontSize: 16, color: C.text, lineHeight: 1.6 }}>
+              {quote ? `\u201C${quote.text}\u201D` : "Loading your thought for today..."}
+            </p>
+          </div>
+          {quote && (
+            <p style={{ fontSize: 12, color: C.hint, flexShrink: 0, fontFamily: "Georgia,serif" }}>
+              {`\u2014 ${quote.author}`}
+            </p>
+          )}
         </div>
 
-        <footer className="mt-20 text-center">
-          <p className="font-heading italic text-haven-text/50">
-            You showed up today. That&apos;s enough.
+        {/* ── Sections 2+3: Main two-column area ──────────────────────── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, marginBottom: 14 }}>
+
+          {/* ── Section 3: Analysis (left) ──────────────────────────────── */}
+          <div style={{ backgroundColor: C.card, borderRadius: 18, padding: 28 }}>
+
+            {/* Greeting + day */}
+            <div style={{ marginBottom: 24 }}>
+              <h1 style={{ fontFamily: "Georgia,serif", fontSize: 32, color: C.text, fontWeight: 500 }}>
+                {`${getGreeting()}, ${firstName}.`}
+              </h1>
+              <p style={{ fontFamily: "Georgia,serif", fontStyle: "italic", fontSize: 14, color: C.muted, marginTop: 5 }}>
+                {`Day ${day}. You\u2019re still here. That matters.`}
+              </p>
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 28 }}>
+              {[
+                { label: "Day", value: day },
+                { label: "Tasks done", value: progress?.tasksCompleted ?? 0 },
+                { label: "Journal entries", value: progress?.journalStreak ?? 0 },
+              ].map((s) => (
+                <div key={s.label} style={{
+                  backgroundColor: C.accent,
+                  borderRadius: 14,
+                  padding: "12px 0",
+                  textAlign: "center",
+                }}>
+                  <p style={{ fontFamily: "Georgia,serif", fontSize: 22, color: C.text, fontWeight: 500 }}>{s.value}</p>
+                  <p style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: C.sand, marginTop: 3 }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, backgroundColor: C.border, marginBottom: 24 }} />
+
+            {/* Mood check-in */}
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600, marginBottom: 12 }}>
+                How are you feeling right now?
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                {moods.map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => handleMoodSelect(opt)}
+                    style={{
+                      flex: 1,
+                      padding: "10px 0",
+                      borderRadius: 12,
+                      border: `1px solid ${selectedMood === opt ? C.blue : C.faint}`,
+                      backgroundColor: selectedMood === opt ? C.blue : "transparent",
+                      color: selectedMood === opt ? "#FDF8F2" : C.text,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              {selectedMood && (
+                <p style={{ fontSize: 11, color: C.hint, marginTop: 8 }}>Noted. See you tomorrow.</p>
+              )}
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, backgroundColor: C.border, marginBottom: 24 }} />
+
+            {/* Pie chart */}
+            <div>
+              <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600, marginBottom: 16 }}>
+                Your week
+              </p>
+              <PieChart trend={trend} />
+            </div>
+
+          </div>
+
+          {/* ── Section 2: Tasks (right) ─────────────────────────────────── */}
+          <div style={{ backgroundColor: C.card, borderRadius: 18, padding: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600 }}>
+                {"Today\u2019s tasks"}
+              </p>
+              <span style={{ fontSize: 11, color: C.hint }}>
+                {completedCount}/{tasks.length}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div style={{ height: 3, backgroundColor: C.faint, borderRadius: 999, marginBottom: 24, overflow: "hidden" }}>
+              <div style={{
+                height: "100%",
+                width: tasks.length > 0 ? `${(completedCount / tasks.length) * 100}%` : "0%",
+                backgroundColor: C.blue,
+                borderRadius: 999,
+                transition: "width 0.4s ease",
+              }} />
+            </div>
+
+            {/* Task list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {tasks.map((task, i) => (
+                <div
+                  key={i}
+                  onClick={() => toggleTask(i)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    cursor: "pointer",
+                    padding: "14px 16px",
+                    borderRadius: 14,
+                    backgroundColor: completedTasks[i] ? "rgba(168,197,218,0.1)" : C.accent,
+                    border: `1px solid ${completedTasks[i] ? "rgba(168,197,218,0.3)" : "transparent"}`,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  <div style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    border: `1.5px solid ${completedTasks[i] ? C.blue : "rgba(45,55,72,0.2)"}`,
+                    backgroundColor: completedTasks[i] ? C.blue : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    marginTop: 1,
+                    transition: "all 0.2s",
+                  }}>
+                    {completedTasks[i] && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M1.5 5.5L4 8L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <p style={{
+                    fontSize: 13,
+                    color: completedTasks[i] ? C.hint : C.text,
+                    lineHeight: 1.5,
+                    textDecoration: completedTasks[i] ? "line-through" : "none",
+                    transition: "all 0.2s",
+                    fontFamily: "Georgia,serif",
+                  }}>
+                    {task.text}
+                  </p>
+                </div>
+              ))}
+
+              {tasks.length === 0 && (
+                <p style={{ fontSize: 13, color: C.hint, textAlign: "center", padding: "20px 0" }}>
+                  Loading your tasks...
+                </p>
+              )}
+            </div>
+
+            {/* All done state */}
+            {tasks.length > 0 && completedCount === tasks.length && (
+              <div style={{ marginTop: 20, textAlign: "center" }}>
+                <p style={{ fontFamily: "Georgia,serif", fontStyle: "italic", fontSize: 13, color: C.blue }}>
+                  {"All done for today. That\u2019s no small thing."}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Sections 4+5: Entry points ───────────────────────────────── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+
+          {/* Journal */}
+          <Link href="/journal" style={{ textDecoration: "none" }}>
+            <div
+              style={{
+                backgroundColor: C.card,
+                borderRadius: 18,
+                padding: "22px 28px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = C.accent)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = C.card)}
+            >
+              <div>
+                <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600, marginBottom: 6 }}>
+                  Your journal
+                </p>
+                <p style={{ fontFamily: "Georgia,serif", fontSize: 18, color: C.text, fontWeight: 500 }}>
+                  {"Write today\u2019s page"}
+                </p>
+                <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                  {`You\u2019ve written ${progress?.journalStreak ?? 0} times \u00B7 AI reflects after you write`}
+                </p>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0, opacity: 0.3 }}>
+                <path d="M4 10h12M12 5l5 5-5 5" stroke={C.text} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </Link>
+
+          {/* Chat */}
+          <Link href="/chat" style={{ textDecoration: "none" }}>
+            <div
+              style={{
+                backgroundColor: C.accent,
+                borderRadius: 18,
+                padding: "22px 28px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(168,197,218,0.15)")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = C.accent)}
+            >
+              <div>
+                <p style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: C.sand, fontWeight: 600, marginBottom: 6 }}>
+                  Your companion
+                </p>
+                <p style={{ fontFamily: "Georgia,serif", fontSize: 18, color: C.text, fontWeight: 500 }}>
+                  Talk to Haven
+                </p>
+                <p style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                  No advice. No judgment. Just space to think.
+                </p>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0, opacity: 0.3 }}>
+                <path d="M4 10h12M12 5l5 5-5 5" stroke={C.text} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </Link>
+
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign: "center", marginTop: 40 }}>
+          <p style={{ fontFamily: "Georgia,serif", fontStyle: "italic", color: C.hint, fontSize: 13 }}>
+            {"You showed up today. That\u2019s enough."}
           </p>
-        </footer>
+        </div>
 
       </main>
     </div>
