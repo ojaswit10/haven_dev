@@ -124,7 +124,8 @@ model ChatSession {
   id           String @id @default(cuid())
   userId       String
   assessmentId String
-  
+  title String @default("A new beginning")
+
   messageCount Int     @default(0)
   isLimited    Boolean @default(false) // true when free limit hit
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { Quote, Task } from "@/lib/content";
+import type { Quote } from "@/lib/content";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,13 @@ interface Progress {
   tasksCompleted: number;
   emotionalTrend: { date: string; mood: string }[];
   graduated: boolean;
+}
+
+interface DBTask {
+  id: string;
+  text: string;
+  completed: boolean;
+  attachmentStyle: string;
 }
 
 type Mood = "Better" | "Same" | "Harder" | "Not sure";
@@ -162,7 +169,7 @@ export default function DashboardPage() {
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [completedTasks, setCompletedTasks] = useState<boolean[]>([false, false, false, false]);
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<DBTask[]>([]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -208,7 +215,7 @@ export default function DashboardPage() {
         if (cData.quote) setQuote(cData.quote);
         if (cData.tasks) {
           setTasks(cData.tasks);
-          setCompletedTasks(new Array(cData.tasks.length).fill(false));
+          setCompletedTasks(cData.tasks.map((t: DBTask) => t.completed));
         }
       }
     } catch {
@@ -231,12 +238,41 @@ export default function DashboardPage() {
     }
   };
 
-  const toggleTask = (i: number) => {
+    const toggleTask = async (i: number) => {
+    const task = tasks[i];
+  console.log("tasks array:", tasks);
+  console.log("clicking index:", i);
+  console.log("task at index:", task);
+  if (!task?.id) {
+    console.log("NO ID - returning early");
+    return;
+  }
+    console.log("task:", task); // add this temporarily
+    if (!task?.id) return;
+    
+
+    const newCompleted = !completedTasks[i];
+
     setCompletedTasks((prev) => {
       const next = [...prev];
-      next[i] = !next[i];
+      next[i] = newCompleted;
       return next;
     });
+
+    try {
+      await fetch("/api/tasks/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id, completed: newCompleted }),
+      });
+    } catch {
+      // Revert on failure
+      setCompletedTasks((prev) => {
+        const next = [...prev];
+        next[i] = !newCompleted;
+        return next;
+      });
+    }
   };
 
   if (status === "loading" || loading) return <DashboardSkeleton />;
@@ -455,7 +491,7 @@ export default function DashboardPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
 
           {/* Journal */}
-          <Link href="/journal" style={{ textDecoration: "none" }}>
+          <Link href="/api/journal" style={{ textDecoration: "none" }}>
             <div
               style={{
                 backgroundColor: C.card,
