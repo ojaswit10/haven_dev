@@ -4,7 +4,14 @@ import {
     ATTACHMENT_CONTENT,
 } from "@/lib/emails/assessmentEmail";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Create the Resend client lazily (on first send), NOT at import time.
+// `next build` imports every route to collect page data; during a Docker build
+// secrets are deliberately absent, and `new Resend(undefined)` throws.
+let resendClient: Resend | null = null;
+function getResend() {
+    if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY);
+    return resendClient;
+}
 
 interface SendAssessmentEmailParams {
     to: string;
@@ -24,7 +31,7 @@ export async function sendAssessmentEmail({
         onePattern: content.patterns[0],
     });
 
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResend().emails.send({
         from: "haven <hello@tryhaven.me>",
         to,
         subject: "Your haven reflection is ready",

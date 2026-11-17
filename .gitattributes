@@ -1,0 +1,9 @@
+# Windows note: git's core.autocrlf=true converts LF -> CRLF on checkout.
+# Linux containers choke on CRLF in shell scripts ("/bin/sh^M: not found"),
+# so force LF for every file that runs or is parsed inside Docker.
+*.sh               text eol=lf
+Dockerfile         text eol=lf
+.dockerignore      text eol=lf
+docker-compose.yml text eol=lf
+*.prisma           text eol=lf
+*.sql              text eol=lf
